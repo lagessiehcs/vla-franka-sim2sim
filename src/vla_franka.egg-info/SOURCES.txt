@@ -1,0 +1,11 @@
+README.md
+pyproject.toml
+src/vla/__init__.py
+src/vla/training/__init__.py
+src/vla/training/supervised_sanity.py
+src/vla_franka.egg-info/PKG-INFO
+src/vla_franka.egg-info/SOURCES.txt
+src/vla_franka.egg-info/dependency_links.txt
+src/vla_franka.egg-info/requires.txt
+src/vla_franka.egg-info/top_level.txt
+tests/test_supervised_sanity.py

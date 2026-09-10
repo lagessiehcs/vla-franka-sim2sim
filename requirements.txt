@@ -1,0 +1,4 @@
+# Install the correct PyTorch wheel for your platform first if needed:
+# https://pytorch.org/get-started/locally/
+numpy>=1.24
+torch>=2.2
