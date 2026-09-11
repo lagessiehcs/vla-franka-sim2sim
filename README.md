@@ -26,12 +26,22 @@ The repository currently includes:
 
 The current dataset is synthetic. It does not yet include simulator environments, RGB observations, language inputs, or Franka demonstration data.
 
+The repository also includes a versioned scene/task metadata contract and a
+dependency-free instruction generator. This can be developed and tested with
+sample JSON before simulator data is available; see
+[the instruction interface](docs/instruction_interface.md).
+
 ## Project layout
 
 ```text
 src/vla/
   training/
     supervised_sanity.py  # dataset, model, training, validation, checkpoints
+  instructions/
+    generator.py          # validate scene/task JSON and generate instructions
+schemas/
+  scene_task.schema.json  # scene/task interchange contract (v1.0)
+examples/scene_tasks/     # valid, runnable scene/task definitions
 tests/
   test_supervised_sanity.py
 pyproject.toml            # package metadata and dependencies
@@ -74,6 +84,16 @@ python -m vla.training.supervised_sanity --epochs 50 --resume checkpoints/last.p
 ```bash
 pytest -q
 ```
+
+## Generate task instructions
+
+```bash
+python -m vla.instructions.generator examples/scene_tasks/place_red_block_on_blue_plate.json
+```
+
+Use `--validate-only` to check a definition without producing language. The
+schema, template behavior, required fields, and integration rules are in
+[docs/instruction_interface.md](docs/instruction_interface.md).
 
 The tests confirm the expected dataset tensor shapes and verify that training writes usable checkpoints and metrics.
 

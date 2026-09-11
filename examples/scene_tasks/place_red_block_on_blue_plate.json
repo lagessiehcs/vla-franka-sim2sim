@@ -1,0 +1,57 @@
+{
+  "schema_version": "1.0",
+  "scene_id": "tabletop_blocks_001",
+  "task_id": "place_red_block_on_blue_plate",
+  "scene": {
+    "frame_id": "world",
+    "objects": [
+      {
+        "id": "red_block_1",
+        "label": "red block",
+        "category": "rigid_object",
+        "affordances": ["graspable", "placeable"],
+        "state": {"is_grasped": false},
+        "pose": {"position": {"x": 0.42, "y": -0.18, "z": 0.03}}
+      },
+      {
+        "id": "blue_plate_1",
+        "label": "blue plate",
+        "category": "support_surface",
+        "affordances": ["supporting_surface"],
+        "state": {},
+        "pose": {"position": {"x": 0.54, "y": 0.15, "z": 0.02}}
+      },
+      {
+        "id": "obstacle_1",
+        "label": "wooden divider",
+        "category": "obstacle",
+        "affordances": [],
+        "state": {},
+        "pose": {"position": {"x": 0.48, "y": -0.01, "z": 0.10}}
+      }
+    ],
+    "relationships": [
+      {"subject_id": "red_block_1", "relation": "left_of", "object_id": "blue_plate_1"}
+    ]
+  },
+  "task": {
+    "goal": "Move the red block onto the blue plate",
+    "steps": [
+      {"action": "pick", "object_id": "red_block_1"},
+      {"action": "place", "object_id": "red_block_1", "target_id": "blue_plate_1", "relation": "on"}
+    ],
+    "constraints": [
+      "Keep the block upright", "Do not contact the wooden divider"
+    ],
+    "safety_notes": [
+      "Use a collision-free path", "Release only after the block is supported by the plate"
+    ],
+    "success_conditions": [
+      {
+        "description": "The red block is resting on the blue plate and the gripper is open",
+        "object_id": "red_block_1",
+        "target_id": "blue_plate_1"
+      }
+    ]
+  }
+}
