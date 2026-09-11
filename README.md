@@ -31,6 +31,9 @@ dependency-free instruction generator. This can be developed and tested with
 sample JSON before simulator data is available; see
 [the instruction interface](docs/instruction_interface.md).
 
+Shared coordinate frames, action units, and gripper encoding are defined in
+[the robot interface conventions](docs/robot_interface.md).
+
 ## Project layout
 
 ```text
@@ -41,6 +44,7 @@ src/vla/
     generator.py          # validate scene/task JSON and generate instructions
   simulation/
     mujoco_franka_inspect.py  # load/inspect/render the MuJoCo Franka Panda
+    conventions.py            # shared frames, action format, gripper adapter
 assets/mujoco_menagerie/  # official Franka model (Git submodule)
 schemas/
   scene_task.schema.json  # scene/task interchange contract (v1.0)
