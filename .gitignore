@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 *.egg-info/
+vla_franka_sim2sim_2_person_execution_plan.pdf
 .pytest_cache/
 checkpoints/
 *.pt
