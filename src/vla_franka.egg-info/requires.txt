@@ -1,9 +1,0 @@
-numpy>=1.24
-torch>=2.2
-
-[dev]
-pytest>=8.0
-
-[simulation]
-mujoco<3.4,>=3.3.7
-Pillow>=10.0
