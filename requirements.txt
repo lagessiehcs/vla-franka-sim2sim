@@ -2,3 +2,7 @@
 # https://pytorch.org/get-started/locally/
 numpy>=1.24
 torch>=2.2
+
+# MuJoCo simulator support (install with: python -m pip install -e '.[simulation]').
+mujoco>=3.3.7,<3.4
+Pillow>=10.0

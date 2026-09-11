@@ -39,6 +39,9 @@ src/vla/
     supervised_sanity.py  # dataset, model, training, validation, checkpoints
   instructions/
     generator.py          # validate scene/task JSON and generate instructions
+  simulation/
+    mujoco_franka_inspect.py  # load/inspect/render the MuJoCo Franka Panda
+assets/mujoco_menagerie/  # official Franka model (Git submodule)
 schemas/
   scene_task.schema.json  # scene/task interchange contract (v1.0)
 examples/scene_tasks/     # valid, runnable scene/task definitions
@@ -50,13 +53,21 @@ requirements.txt          # runtime dependencies
 
 ## Installation
 
-Use Python 3.9 or later. From the repository root:
+Use Python 3.9 or later. From the repository root, create and activate the
+isolated Conda environment:
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
+conda create -n vla python=3.10 pip
+conda activate vla
 python -m pip install -e '.[dev]'
+```
+
+For the MuJoCo Franka inspection tool, install the project-local simulation
+dependencies as well:
+
+```bash
+python -m pip install -e '.[dev,simulation]'
+git submodule update --init --recursive
 ```
 
 The training script automatically selects CUDA when available, otherwise Apple Silicon MPS, then CPU. If the default PyTorch installation does not support your hardware, install the appropriate wheel from [PyTorch's installation guide](https://pytorch.org/get-started/locally/) before installing this project.
@@ -96,6 +107,31 @@ schema, template behavior, required fields, and integration rules are in
 [docs/instruction_interface.md](docs/instruction_interface.md).
 
 The tests confirm the expected dataset tensor shapes and verify that training writes usable checkpoints and metrics.
+
+## Inspect the MuJoCo Franka Panda
+
+The official MuJoCo Menagerie model is included as the
+`assets/mujoco_menagerie` Git submodule. The following command loads the Panda,
+prints its joints, gripper, end-effector body, actuators, and camera details,
+then writes a third-person RGB frame:
+
+```bash
+python -m vla.simulation.mujoco_franka_inspect --output results/franka_inspection.png
+```
+
+Install the optional simulator dependencies in the same Conda environment; no
+system Python packages are required.
+
+To run and view the Franka scene, start in the repository root and run:
+
+```bash
+python -m vla.simulation.mujoco_franka_inspect --viewer
+```
+
+The command first prints the Panda's joint, gripper, end-effector, actuator,
+and camera details and saves `results/franka_inspection.png`. It then opens the
+interactive viewer. The arm starts in its home pose and will not move until a
+controller is added.
 
 ## Key implementation details
 
