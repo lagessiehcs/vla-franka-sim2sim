@@ -24,7 +24,8 @@ The repository currently includes:
 - Checkpoint resume support.
 - JSON metric output and automated smoke tests.
 
-The current dataset is synthetic. It does not yet include simulator environments, RGB observations, language inputs, or Franka demonstration data.
+The current supervised-training dataset is synthetic. It does not yet consume
+the simulator RGB observations, language inputs, or Franka demonstration data.
 
 The repository also includes a versioned scene/task metadata contract and a
 dependency-free instruction generator. This can be developed and tested with
@@ -44,6 +45,8 @@ src/vla/
     generator.py          # validate scene/task JSON and generate instructions
   simulation/
     mujoco_franka_inspect.py  # load/inspect/render the MuJoCo Franka Panda
+    mujoco_tabletop.py        # seeded tabletop scenes, RGB camera, state queries
+    generate_tabletop_dataset.py  # batch RGB scenes, task JSON, and instructions
     conventions.py            # shared frames, action format, gripper adapter
 assets/mujoco_menagerie/  # official Franka model (Git submodule)
 schemas/
@@ -136,6 +139,52 @@ The command first prints the Panda's joint, gripper, end-effector, actuator,
 and camera details and saves `results/franka_inspection.png`. It then opens the
 interactive viewer. The arm starts in its home pose and will not move until a
 controller is added.
+
+## Generate a randomized tabletop scene
+
+The tabletop environment adds a table, three colored cubes, two target bins,
+and one fixed RGB camera to the Panda model. Reset it with a seed to place the
+cubes randomly but reproducibly, then render the camera frame:
+
+```bash
+python -m vla.simulation.mujoco_tabletop --seed 42 --output results/tabletop.png
+```
+
+To view that same reset scene directly in MuJoCo:
+
+```bash
+python -m vla.simulation.mujoco_tabletop --seed 42 --viewer
+```
+
+Use `TabletopEnvironment` from Python when generating data:
+
+```python
+from vla.simulation.mujoco_tabletop import TabletopEnvironment
+
+environment = TabletopEnvironment()
+scene = environment.reset(seed=42)
+rgb = environment.get_rgb()
+robot = environment.get_robot_state()
+```
+
+`scene` contains the cube and target-zone metadata in the `world` frame.
+Cube placement limits are read from the MuJoCo table geometry at reset time and
+filtered by the Panda base location. Exact reachable poses will be checked by
+inverse kinematics when the controller is added.
+
+## Generate a tabletop dataset
+
+Generate 200 seeded RGB scenes, valid scene/task JSON files, and deterministic
+language instructions:
+
+```bash
+python -m vla.simulation.generate_tabletop_dataset --count 200 --seed 0 --output results/tabletop_dataset
+```
+
+The output contains `images/`, `scene_tasks/`, and `manifest.jsonl`. Each
+manifest line links one image, scene/task definition, instruction, and camera
+pose. Use `--camera-jitter 0` for a fixed camera or a small positive value for
+seeded viewpoint variation.
 
 ## Key implementation details
 
