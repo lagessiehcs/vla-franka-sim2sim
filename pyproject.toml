@@ -19,6 +19,10 @@ simulation = [
     "mujoco>=3.3.7,<3.4",
     "Pillow>=10.0",
 ]
+semantic = [
+    "Pillow>=10.0",
+    "open_clip_torch>=2.24",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

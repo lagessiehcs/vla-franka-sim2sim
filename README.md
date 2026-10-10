@@ -43,6 +43,8 @@ src/vla/
     supervised_sanity.py  # dataset, model, training, validation, checkpoints
   instructions/
     generator.py          # validate scene/task JSON and generate instructions
+  semantic/
+    baseline.py           # CLIP-feature object/bin grounding baseline
   simulation/
     mujoco_franka_inspect.py  # load/inspect/render the MuJoCo Franka Panda
     mujoco_tabletop.py        # seeded tabletop scenes, RGB camera, state queries
@@ -220,6 +222,28 @@ python -m vla.simulation.cartesian_controller --seed 0 --viewer
 
 On macOS, this command automatically restarts through MuJoCo's `mjpython`
 launcher when `--viewer` is present.
+
+## Train and run the semantic VLA baseline
+
+Install the semantic-model dependency:
+
+```bash
+python -m pip install -e '.[simulation,semantic]'
+```
+
+Generate a dataset, then train the object/bin grounding model:
+
+```bash
+python -m vla.simulation.generate_tabletop_dataset --count 200 --seed 0 --output results/tabletop_dataset
+python -m vla.semantic.baseline train --dataset results/tabletop_dataset --checkpoint checkpoints/semantic_vla.pt
+```
+
+Run an instruction through the RGB-and-language model. Its selected cube and
+bin are passed to the scripted controller:
+
+```bash
+python -m vla.semantic.baseline run --checkpoint checkpoints/semantic_vla.pt --seed 0 --instruction "Put the red cube in the yellow bin." --viewer
+```
 
 ## Key implementation details
 
