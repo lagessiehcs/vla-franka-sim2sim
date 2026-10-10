@@ -40,6 +40,15 @@ def test_reset_is_seeded_and_keeps_cubes_separate(environment: TabletopEnvironme
     first_positions = cube_positions(first)
     assert np.array_equal(first_positions, cube_positions(second))
     assert not np.array_equal(first_positions, cube_positions(different))
+
+    def cube_orientations(scene: dict) -> np.ndarray:
+        cubes = [item for item in scene["objects"] if item["category"] == "rigid_object"]
+        return np.array([item["pose"]["orientation_xyzw"] for item in cubes])
+
+    assert np.array_equal(cube_orientations(first), cube_orientations(second))
+    assert not np.array_equal(cube_orientations(first), cube_orientations(different))
+    # Reset randomizes yaw only, so every cube stays upright on the table.
+    assert np.allclose(cube_orientations(first)[:, :2], 0.0)
     assert all(
         np.linalg.norm(first_positions[left, :2] - first_positions[right, :2]) >= 0.09
         for left in range(3)

@@ -47,6 +47,8 @@ src/vla/
     mujoco_franka_inspect.py  # load/inspect/render the MuJoCo Franka Panda
     mujoco_tabletop.py        # seeded tabletop scenes, RGB camera, state queries
     generate_tabletop_dataset.py  # batch RGB scenes, task JSON, and instructions
+    cartesian_controller.py   # Cartesian IK and scripted pick-and-place episodes
+    episode_logging.py        # episode records and automatic success checks
     conventions.py            # shared frames, action format, gripper adapter
 assets/mujoco_menagerie/  # official Franka model (Git submodule)
 schemas/
@@ -171,6 +173,8 @@ robot = environment.get_robot_state()
 Cube placement limits are read from the MuJoCo table geometry at reset time and
 filtered by the Panda base location. Exact reachable poses will be checked by
 inverse kinematics when the controller is added.
+Cube positions and upright yaw orientations are randomized deterministically
+from the reset seed.
 
 ## Generate a tabletop dataset
 
@@ -185,6 +189,37 @@ The output contains `images/`, `scene_tasks/`, and `manifest.jsonl`. Each
 manifest line links one image, scene/task definition, instruction, and camera
 pose. Use `--camera-jitter 0` for a fixed camera or a small positive value for
 seeded viewpoint variation.
+
+## Run a scripted pick-and-place episode
+
+The Cartesian controller uses damped-least-squares inverse kinematics, Panda
+position actuators, workspace limits, and the shared action format:
+
+```text
+[dx, dy, dz, dyaw, gripper]
+```
+
+Run a seeded demonstration and write its phase log:
+
+```bash
+python -m vla.simulation.cartesian_controller --seed 0 --object red_cube_1 --target yellow_bin_1 --log results/scripted_episode.json
+```
+
+The sequence is: approach, descend, close, lift, move above the target,
+descend, open, and retreat. The JSON log records each phase, robot state,
+object/target states, and the final automatic success result. Before grasping,
+the hand yaw aligns its finger-closing direction with a cube face. Cube yaw is
+randomized within the controller's reliable grasp range. The scripted path
+carries the cube above the bin walls and keeps the fingertips clear while
+descending. Add `--viewer`
+to watch the complete episode in MuJoCo at simulation speed:
+
+```bash
+python -m vla.simulation.cartesian_controller --seed 0 --viewer
+```
+
+On macOS, this command automatically restarts through MuJoCo's `mjpython`
+launcher when `--viewer` is present.
 
 ## Key implementation details
 

@@ -10,7 +10,7 @@ conventions.
 | Position and translation | metres |
 | Angle and yaw | radians |
 | World frame | `world` |
-| World origin | Panda base body (`link0`) origin |
+| World origin | MuJoCo `world` body origin |
 | World axes | `+x` forward into the workspace, `+y` robot left, `+z` upward |
 | Coordinate system | right-handed |
 | End-effector frame | Panda `hand` body frame |
@@ -58,3 +58,10 @@ The controller maps the project command as follows:
 Use `vla.simulation.conventions.gripper_command_to_panda_control` for this
 conversion rather than placing this model-specific mapping in dataset or model
 code.
+
+## Scripted controller
+
+`vla.simulation.cartesian_controller.CartesianPandaController` converts a
+world-frame target into the seven Panda joint targets with damped-least-squares
+inverse kinematics. It rejects targets outside its workspace limits, which are
+derived from the loaded table and Panda-base geometry.

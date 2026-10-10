@@ -25,14 +25,20 @@ PANDA_XML = PANDA_DIRECTORY / "panda.xml"
 RGB_CAMERA = "rgb_camera"
 CUBE_HALF_SIZE = 0.025
 CUBE_FRICTION = (2.0, 0.02, 0.001)
+# Randomize each cube's upright yaw by up to about 29 degrees.
+CUBE_MAX_YAW = 0.50
 TABLE_EDGE_MARGIN = 0.075
-BIN_CLEARANCE = 0.02
+# Keep sampled cube centres clear of bin walls and the width of the Panda
+# gripper during a vertical grasp.
+BIN_CLEARANCE = 0.10
 # A conservative workspace filter relative to the Panda base.
 # Inverse kinematics and collision checking will provide the final reachability
 # decision when a controller is added.
 MAX_CUBE_DISTANCE_FROM_ROBOT_BASE = 0.78
 MAX_TARGET_DISTANCE_FROM_ROBOT_BASE = 0.75
-MIN_CUBE_FORWARD_FROM_ROBOT_BASE = 0.25
+# A downward-facing physical grasp needs more clearance than a loose
+# reachability check, so do not sample cubes at the rear edge of the table.
+MIN_CUBE_FORWARD_FROM_ROBOT_BASE = 0.32
 # The platform-and-table footprint spans x=-0.635 to x=0.635, centred on the floor origin.
 ROBOT_PLATFORM_POSITION = (-0.415, 0.0, 0.0)
 ROBOT_PLATFORM_HEIGHT = 0.15
@@ -146,6 +152,7 @@ class TabletopEnvironment:
         self.model = mujoco.MjModel.from_xml_string(_tabletop_xml(), assets=_panda_assets())
         self.data = mujoco.MjData(self.model)
         self._cube_positions: dict[str, np.ndarray] = {}
+        self._grasped_object_id: str | None = None
         self.reset(seed=0)
 
     def reset(self, seed: int | None = None) -> dict[str, Any]:
@@ -153,6 +160,7 @@ class TabletopEnvironment:
         rng = np.random.default_rng(seed)
         mujoco.mj_resetDataKeyframe(self.model, self.data, 0)
         mujoco.mj_forward(self.model, self.data)
+        self._grasped_object_id = None
 
         positions: list[np.ndarray] = []
         self._cube_positions = {}
@@ -160,14 +168,30 @@ class TabletopEnvironment:
             position = self._sample_cube_position(rng, positions)
             positions.append(position)
             self._cube_positions[object_id] = position
+
+        orientation_rng = np.random.default_rng(seed)
+        for (object_id, _, _), position in zip(_CUBES, positions):
+            yaw = orientation_rng.uniform(-CUBE_MAX_YAW, CUBE_MAX_YAW)
+            quaternion_wxyz = (np.cos(yaw / 2), 0.0, 0.0, np.sin(yaw / 2))
             joint = self.model.joint(f"{object_id}_free")
             qpos_address = joint.qposadr[0]
             self.data.qpos[qpos_address : qpos_address + 3] = position
-            self.data.qpos[qpos_address + 3 : qpos_address + 7] = (1.0, 0.0, 0.0, 0.0)
+            self.data.qpos[qpos_address + 3 : qpos_address + 7] = quaternion_wxyz
 
         self.data.qvel[:] = 0.0
         mujoco.mj_forward(self.model, self.data)
         return self.get_scene_state()
+
+    def set_grasped_object(self, object_id: str | None) -> None:
+        """Record which cube is currently held by the gripper, if any.
+
+        The Cartesian controller owns the motion used to hold the cube.  This
+        method keeps the scene-state metadata in sync with that controller.
+        """
+        cube_ids = {cube[0] for cube in _CUBES}
+        if object_id is not None and object_id not in cube_ids:
+            raise KeyError(f"unknown tabletop cube: {object_id}")
+        self._grasped_object_id = object_id
 
     def _sample_cube_position(self, rng: np.random.Generator, occupied: list[np.ndarray]) -> np.ndarray:
         """Sample a cube centre from the current table, bin, and robot layout."""
@@ -268,13 +292,17 @@ class TabletopEnvironment:
         if cube is not None:
             body = self.model.body(object_id)
             position = self.data.xpos[body.id]
+            quaternion_wxyz = self.data.xquat[body.id]
             return {
                 "id": object_id,
                 "label": cube[1],
                 "category": "rigid_object",
                 "affordances": ["graspable", "placeable"],
-                "state": {"is_grasped": False},
-                "pose": {"position": self._position_dict(position)},
+                "state": {"is_grasped": object_id == self._grasped_object_id},
+                "pose": {
+                    "position": self._position_dict(position),
+                    "orientation_xyzw": self._quaternion_xyzw(quaternion_wxyz),
+                },
             }
 
         target = next((item for item in _BINS if item[0] == object_id), None)
@@ -316,6 +344,12 @@ class TabletopEnvironment:
     @staticmethod
     def _position_dict(position: np.ndarray) -> dict[str, float]:
         return {axis: float(value) for axis, value in zip(("x", "y", "z"), position)}
+
+    @staticmethod
+    def _quaternion_xyzw(quaternion_wxyz: np.ndarray) -> list[float]:
+        """Convert MuJoCo's scalar-first quaternion to scene metadata order."""
+        w, x, y, z = quaternion_wxyz
+        return [float(x), float(y), float(z), float(w)]
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
