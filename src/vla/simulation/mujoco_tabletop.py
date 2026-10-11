@@ -30,7 +30,7 @@ CUBE_MAX_YAW = 0.50
 TABLE_EDGE_MARGIN = 0.075
 # Keep sampled cube centres clear of bin walls and the width of the Panda
 # gripper during a vertical grasp.
-BIN_CLEARANCE = 0.10
+BIN_CLEARANCE = 0.08
 # A conservative workspace filter relative to the Panda base.
 # Inverse kinematics and collision checking will provide the final reachability
 # decision when a controller is added.
@@ -151,6 +151,7 @@ class TabletopEnvironment:
     def __init__(self) -> None:
         self.model = mujoco.MjModel.from_xml_string(_tabletop_xml(), assets=_panda_assets())
         self.data = mujoco.MjData(self.model)
+        self._renderers: dict[tuple[int, int], mujoco.Renderer] = {}
         self._cube_positions: dict[str, np.ndarray] = {}
         self._grasped_object_id: str | None = None
         self.reset(seed=0)
@@ -227,9 +228,19 @@ class TabletopEnvironment:
 
     def get_rgb(self, width: int = 640, height: int = 480) -> np.ndarray:
         """Return the RGB image from the fixed named camera as ``uint8[H, W, 3]``."""
-        with mujoco.Renderer(self.model, height=height, width=width) as renderer:
-            renderer.update_scene(self.data, camera=RGB_CAMERA)
-            return renderer.render().copy()
+        key = (width, height)
+        renderer = self._renderers.get(key)
+        if renderer is None:
+            renderer = mujoco.Renderer(self.model, height=height, width=width)
+            self._renderers[key] = renderer
+        renderer.update_scene(self.data, camera=RGB_CAMERA)
+        return renderer.render().copy()
+
+    def close(self) -> None:
+        """Release cached MuJoCo RGB renderers."""
+        for renderer in self._renderers.values():
+            renderer.close()
+        self._renderers.clear()
 
     def set_rgb_camera(self, position: Sequence[float], target: Sequence[float]) -> dict[str, list[float]]:
         """Point the named RGB camera at ``target`` from a world-frame position."""

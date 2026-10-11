@@ -49,6 +49,7 @@ src/vla/
     mujoco_franka_inspect.py  # load/inspect/render the MuJoCo Franka Panda
     mujoco_tabletop.py        # seeded tabletop scenes, RGB camera, state queries
     generate_tabletop_dataset.py  # batch RGB scenes, task JSON, and instructions
+    generate_expert_dataset.py  # RGB/action behavior-cloning trajectories
     cartesian_controller.py   # Cartesian IK and scripted pick-and-place episodes
     episode_logging.py        # episode records and automatic success checks
     conventions.py            # shared frames, action format, gripper adapter
@@ -222,6 +223,20 @@ python -m vla.simulation.cartesian_controller --seed 0 --viewer
 
 On macOS, this command automatically restarts through MuJoCo's `mjpython`
 launcher when `--viewer` is present.
+
+## Generate expert trajectories
+
+Generate scripted demonstrations for behavior cloning:
+
+```bash
+python -m vla.simulation.generate_expert_dataset --count 200 --seed 0 --output results/expert_dataset
+```
+
+Validate the generated RGB images, actions, metadata, and episode-level splits:
+
+```bash
+python -m vla.simulation.generate_expert_dataset --validate results/expert_dataset
+```
 
 ## Train and run the semantic VLA baseline
 

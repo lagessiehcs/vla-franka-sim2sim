@@ -108,6 +108,7 @@ class CartesianPandaController:
         self._arm_actuator_ids = np.array([self.model.actuator(f"actuator{index}").id for index in range(1, 8)])
         self._gripper_actuator_id = self.model.actuator(PANDA_GRIPPER_ACTUATOR).id
         self._viewer: Any | None = None
+        self._trajectory_recorder: Any | None = None
         self._robot_body_ids = {
             body_id
             for body_id in range(self.model.nbody)
@@ -123,6 +124,10 @@ class CartesianPandaController:
     def attach_viewer(self, live_viewer: Any) -> None:
         """Show every simulated physics step in a MuJoCo passive viewer."""
         self._viewer = live_viewer
+
+    def attach_trajectory_recorder(self, recorder: Any | None) -> None:
+        """Record one expert action for every scripted controller waypoint."""
+        self._trajectory_recorder = recorder
 
     def solve_ik(
         self,
@@ -187,10 +192,23 @@ class CartesianPandaController:
         if max_cartesian_step <= 0 or physics_steps_per_waypoint <= 0:
             raise ValueError("motion step sizes must be positive")
         start = self.data.xpos[self._hand_body_id].copy()
-        waypoint_count = max(1, int(np.ceil(np.linalg.norm(target - start) / max_cartesian_step)))
+        start_yaw = self._hand_yaw()
+        yaw_change = 0.0 if target_yaw is None else self._angle_difference(target_yaw, start_yaw)
+        waypoint_count = max(
+            1,
+            int(np.ceil(np.linalg.norm(target - start) / max_cartesian_step)),
+            int(np.ceil(abs(yaw_change) / 0.10)),
+        )
         for index in range(1, waypoint_count + 1):
             waypoint = start + (target - start) * (index / waypoint_count)
-            self.data.ctrl[self._arm_actuator_ids] = self.solve_ik(waypoint, target_yaw)
+            waypoint_yaw = None if target_yaw is None else start_yaw + yaw_change * (index / waypoint_count)
+            current_position = self.data.xpos[self._hand_body_id].copy()
+            current_yaw = self._hand_yaw()
+            action = np.array(
+                (*((waypoint - current_position).tolist()), 0.0 if waypoint_yaw is None else self._angle_difference(waypoint_yaw, current_yaw), self.environment.get_robot_state()["gripper"])
+            )
+            self._record_expert_action(action, "move")
+            self.data.ctrl[self._arm_actuator_ids] = self.solve_ik(waypoint, waypoint_yaw)
             self._step_physics(physics_steps_per_waypoint)
 
         # Position actuators need a short settling interval after the final
@@ -220,11 +238,13 @@ class CartesianPandaController:
     def open_gripper(self) -> None:
         """Open the fingers."""
         self.environment.set_grasped_object(None)
+        self._record_expert_action(np.array((0.0, 0.0, 0.0, 0.0, GRIPPER_OPEN)), "open_gripper")
         self.data.ctrl[self._gripper_actuator_id] = gripper_command_to_panda_control(GRIPPER_OPEN)
         self._step_physics(150)
 
     def close_gripper(self, object_id: str | None = None) -> None:
         """Close the fingers and verify a requested cube is physically grasped."""
+        self._record_expert_action(np.array((0.0, 0.0, 0.0, 0.0, GRIPPER_CLOSED)), "close_gripper")
         self.data.ctrl[self._gripper_actuator_id] = gripper_command_to_panda_control(GRIPPER_CLOSED)
         self._step_physics(200)
         if object_id is not None:
@@ -239,65 +259,67 @@ class CartesianPandaController:
         scene_id: str = "scripted_tabletop",
         task_id: str | None = None,
         logger: EpisodeLogger | None = None,
+        trajectory_recorder: Any | None = None,
     ) -> dict[str, Any]:
         """Execute approach, grasp, lift, place, and retreat for one cube/bin pair.
 
         The gripper closes around the cube before lifting it to the target.
         """
         self._validate_task_objects(object_id, target_id)
+        previous_recorder = self._trajectory_recorder
+        self.attach_trajectory_recorder(trajectory_recorder)
         task_id = task_id or f"place_{object_id}_in_{target_id}"
         logger = logger or EpisodeLogger(scene_id=scene_id, task_id=task_id)
+        try:
+            self.open_gripper()
+            self._record(logger, "open_gripper", object_id, target_id, [0.0, 0.0, 0.0, 0.0, GRIPPER_OPEN])
 
-        self.open_gripper()
-        self._record(logger, "open_gripper", object_id, target_id, [0.0, 0.0, 0.0, 0.0, GRIPPER_OPEN])
+            cube_position = self.data.xpos[self.model.body(object_id).id].copy()
+            grasp_yaw = self._grasp_yaw(object_id)
+            approach = cube_position + np.array((0.0, 0.0, 0.18))
+            self.move_to(approach, target_yaw=grasp_yaw)
+            self._record(logger, "approach_object", object_id, target_id)
 
-        cube_position = self.data.xpos[self.model.body(object_id).id].copy()
-        grasp_yaw = self._grasp_yaw(object_id)
-        approach = cube_position + np.array((0.0, 0.0, 0.18))
-        self.move_to(approach, target_yaw=grasp_yaw)
-        self._record(logger, "approach_object", object_id, target_id)
+            grasp_position = cube_position + np.array((0.0, 0.0, 0.12))
+            self.move_to(grasp_position, target_yaw=grasp_yaw)
+            self._record(logger, "descend_to_object", object_id, target_id)
 
-        # The fingertips straddle the cube at this hand-frame height.
-        grasp_position = cube_position + np.array((0.0, 0.0, 0.12))
-        self.move_to(grasp_position, target_yaw=grasp_yaw)
-        self._record(logger, "descend_to_object", object_id, target_id)
+            self.close_gripper(object_id)
+            self._record(logger, "close_gripper", object_id, target_id, [0.0, 0.0, 0.0, 0.0, GRIPPER_CLOSED])
 
-        self.close_gripper(object_id)
-        self._record(logger, "close_gripper", object_id, target_id, [0.0, 0.0, 0.0, 0.0, GRIPPER_CLOSED])
+            bin_top = self._bin_top(target_id)
+            transport_height = max(
+                self.data.xpos[self._hand_body_id][2] + 0.18,
+                bin_top + BIN_TRANSPORT_CLEARANCE,
+            )
+            lift_position = self.data.xpos[self._hand_body_id].copy()
+            lift_position[2] = transport_height
+            self.move_to(lift_position, target_yaw=grasp_yaw)
+            self._record(logger, "lift_object", object_id, target_id)
 
-        bin_top = self._bin_top(target_id)
-        transport_height = max(
-            self.data.xpos[self._hand_body_id][2] + 0.18,
-            bin_top + BIN_TRANSPORT_CLEARANCE,
-        )
-        lift_position = self.data.xpos[self._hand_body_id].copy()
-        lift_position[2] = transport_height
-        self.move_to(lift_position, target_yaw=grasp_yaw)
-        self._record(logger, "lift_object", object_id, target_id)
+            target_position = self.data.xpos[self.model.body(target_id).id].copy()
+            above_target = target_position.copy()
+            above_target[2] = transport_height
+            self.move_to(above_target, target_yaw=grasp_yaw)
+            self._record(logger, "move_above_target", object_id, target_id)
 
-        target_position = self.data.xpos[self.model.body(target_id).id].copy()
-        above_target = target_position.copy()
-        above_target[2] = transport_height
-        self.move_to(above_target, target_yaw=grasp_yaw)
-        self._record(logger, "move_above_target", object_id, target_id)
+            place_hand_position = target_position.copy()
+            place_hand_position[2] = bin_top + self._fingertip_clearance_below_hand() + BIN_FINGERTIP_CLEARANCE
+            self.move_to(place_hand_position, target_yaw=grasp_yaw)
+            self._record(logger, "descend_to_target", object_id, target_id)
 
-        # Keep the fingertips above the bin walls, then let the released cube
-        # settle naturally onto the bin base.
-        place_hand_position = target_position.copy()
-        place_hand_position[2] = bin_top + self._fingertip_clearance_below_hand() + BIN_FINGERTIP_CLEARANCE
-        self.move_to(place_hand_position, target_yaw=grasp_yaw)
-        self._record(logger, "descend_to_target", object_id, target_id)
+            self.open_gripper()
+            self._step_physics(300)
+            self._record(logger, "open_gripper", object_id, target_id, [0.0, 0.0, 0.0, 0.0, GRIPPER_OPEN])
 
-        self.open_gripper()
-        self._step_physics(300)
-        self._record(logger, "open_gripper", object_id, target_id, [0.0, 0.0, 0.0, 0.0, GRIPPER_OPEN])
+            retreat_position = self.data.xpos[self._hand_body_id].copy() + np.array((0.0, 0.0, 0.18))
+            self.move_to(retreat_position, target_yaw=grasp_yaw)
+            self._record(logger, "retreat", object_id, target_id)
 
-        retreat_position = self.data.xpos[self._hand_body_id].copy() + np.array((0.0, 0.0, 0.18))
-        self.move_to(retreat_position, target_yaw=grasp_yaw)
-        self._record(logger, "retreat", object_id, target_id)
-
-        success = PickPlaceSuccessChecker().check(self.environment, object_id, target_id)
-        return {"success": success, "episode": logger.to_dict(success)}
+            success = PickPlaceSuccessChecker().check(self.environment, object_id, target_id)
+            return {"success": success, "episode": logger.to_dict(success)}
+        finally:
+            self.attach_trajectory_recorder(previous_recorder)
 
     def _step_physics(self, steps: int) -> None:
         for _ in range(steps):
@@ -319,6 +341,11 @@ class CartesianPandaController:
                 continue
             contacted_fingers.update({first_body, second_body} & {"left_finger", "right_finger"})
         return contacted_fingers == {"left_finger", "right_finger"}
+
+    def _record_expert_action(self, action: np.ndarray, phase: str) -> None:
+        """Send one pre-action observation and small Cartesian command to a recorder."""
+        if self._trajectory_recorder is not None:
+            self._trajectory_recorder.record(self.environment, action, phase)
 
     def _bin_top(self, target_id: str) -> float:
         """Return the highest upper surface of one target bin."""

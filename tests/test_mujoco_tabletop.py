@@ -76,6 +76,12 @@ def test_reset_is_seeded_and_keeps_cubes_separate(environment: TabletopEnvironme
     assert np.all(np.linalg.norm(bin_positions - robot_base, axis=1) <= MAX_TARGET_DISTANCE_FROM_ROBOT_BASE)
 
 
+def test_reset_supports_the_first_200_dataset_seeds(environment: TabletopEnvironment) -> None:
+    for seed in range(200):
+        scene = environment.reset(seed=seed)
+        assert len([item for item in scene["objects"] if item["category"] == "rigid_object"]) == 3
+
+
 def test_scene_and_robot_queries_have_shared_frames(environment: TabletopEnvironment) -> None:
     scene = environment.reset(seed=2)
     robot = environment.get_robot_state()
@@ -102,6 +108,16 @@ def test_rgb_camera_returns_an_image(environment: TabletopEnvironment) -> None:
     assert image.shape == (120, 160, 3)
     assert image.dtype == np.uint8
     assert image.mean() > 20
+
+
+def test_rgb_camera_reuses_its_renderer(environment: TabletopEnvironment) -> None:
+    environment.get_rgb(width=80, height=60)
+    first_renderer = environment._renderers[(80, 60)]
+    environment.get_rgb(width=80, height=60)
+
+    assert environment._renderers[(80, 60)] is first_renderer
+    environment.close()
+    assert environment._renderers == {}
 
 
 def test_cubes_use_the_configured_friction(environment: TabletopEnvironment) -> None:
